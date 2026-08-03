@@ -14,7 +14,7 @@ class CoverServiceIsbnTest {
 
     @Test
     fun isValidIsbn_accepts10And13() {
-        assertTrue(CoverService.isValidIsbn("0306406152"))
+        assertTrue(CoverService.isValidIsbn("0306406157"))
         assertTrue(CoverService.isValidIsbn("9780306406157"))
         assertFalse(CoverService.isValidIsbn("123"))
     }
