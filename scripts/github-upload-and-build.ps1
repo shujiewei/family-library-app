@@ -20,8 +20,21 @@ function Get-GhHeaders([string]$Token) {
 
 function Invoke-Gh([string]$Method, [string]$Uri, [hashtable]$Headers, $Body = $null) {
     $params = @{ Method = $Method; Uri = $Uri; Headers = $Headers }
-    if ($null -ne $Body) { $params.Body = $Body }
+    if ($null -ne $Body) {
+        $params.Body = $Body
+        $params.ContentType = "application/json"
+    }
     Invoke-RestMethod @params
+}
+
+function Get-ContentSha([string]$RepoUri, [string]$RelPath, [string]$Branch, [hashtable]$Headers) {
+    $encoded = [Uri]::EscapeDataString($RelPath).Replace("%2F", "/")
+    try {
+        $existing = Invoke-Gh "GET" "$RepoUri/contents/${encoded}?ref=$Branch" $Headers
+        return $existing.sha
+    } catch {
+        return $null
+    }
 }
 
 $tokenPath = "C:\Users\shujiewe\.github_token"
@@ -30,13 +43,13 @@ $token = (Get-Content $tokenPath -Raw).Trim()
 if ([string]::IsNullOrWhiteSpace($token)) { throw "Token file is empty" }
 
 $H = Get-GhHeaders $token
-$user = Invoke-Gh GET "https://api.github.com/user" $H
+$user = Invoke-Gh "GET" "https://api.github.com/user" $H
 $owner = $user.login
 Write-Host "GitHub user: $owner"
 
 $repoUri = "https://api.github.com/repos/$owner/$Repo"
 try {
-    $repoInfo = Invoke-Gh GET $repoUri $H
+    $repoInfo = Invoke-Gh "GET" $repoUri $H
     Write-Host "Repo exists: $($repoInfo.full_name)"
 } catch {
     Write-Host "Repo '$Repo' not found. Create it first:" -ForegroundColor Yellow
@@ -53,7 +66,7 @@ try {
         branch  = $Branch
     }
     $probePath = ".github/ci-probe-$([Guid]::NewGuid().ToString('N').Substring(0,8)).txt"
-    Invoke-Gh PUT "$repoUri/contents/$probePath" $H ($probe | ConvertTo-Json) | Out-Null
+    Invoke-Gh "PUT" "$repoUri/contents/$probePath" $H ($probe | ConvertTo-Json) | Out-Null
 } catch {
     throw "Token cannot write to $owner/$Repo. Use a classic PAT with 'repo' scope, or fine-grained PAT with Contents + Actions on this repo."
 }
@@ -79,37 +92,29 @@ foreach ($file in $files) {
     $rel = $file.FullName.Substring($ProjectDir.Length + 1).Replace("\", "/")
     $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
     $b64 = [Convert]::ToBase64String($bytes)
-    $sha = $null
-    try {
-        $existing = Invoke-Gh GET "$repoUri/contents/$rel?ref=$Branch" $H
-        $sha = $existing.sha
-    } catch { }
+    $sha = Get-ContentSha $repoUri $rel $Branch $H
+    $encoded = [Uri]::EscapeDataString($rel).Replace("%2F", "/")
 
-    $bodyObj = @{
+    $bodyObj = [ordered]@{
         message = "ci: update $rel"
         content = $b64
         branch  = $Branch
     }
-    if ($sha) { $bodyObj.sha = $sha }
-    $body = $bodyObj | ConvertTo-Json
-    try {
-        Invoke-Gh PUT "$repoUri/contents/$rel" $H $body | Out-Null
-    } catch {
-        # First commit on empty repo: create branch via contents API still works
-        Invoke-Gh PUT "$repoUri/contents/$rel" $H $body | Out-Null
-    }
+    if ($sha) { $bodyObj["sha"] = $sha }
+    $body = $bodyObj | ConvertTo-Json -Compress
+    Invoke-Gh "PUT" "$repoUri/contents/$encoded" $H $body | Out-Null
     Write-Host "  uploaded $rel"
 }
 
 Write-Host "Triggering workflow ..."
 $wfBody = (@{ ref = $Branch } | ConvertTo-Json)
-Invoke-Gh POST "$repoUri/actions/workflows/android-ci.yml/dispatches" $H $wfBody | Out-Null
+Invoke-Gh "POST" "$repoUri/actions/workflows/android-ci.yml/dispatches" $H $wfBody | Out-Null
 
 Write-Host "Waiting for workflow run ..."
 $run = $null
 for ($i = 0; $i -lt 90; $i++) {
     Start-Sleep -Seconds 10
-    $runs = Invoke-Gh GET "$repoUri/actions/workflows/android-ci.yml/runs?per_page=1" $H
+    $runs = Invoke-Gh "GET" "$repoUri/actions/workflows/android-ci.yml/runs?per_page=1" $H
     if ($runs.workflow_runs.Count -gt 0) {
         $run = $runs.workflow_runs[0]
         Write-Host "  status=$($run.status) conclusion=$($run.conclusion)"
@@ -122,7 +127,7 @@ if ($run.conclusion -ne "success") {
 }
 
 Write-Host "Downloading APK artifact ..."
-$arts = Invoke-Gh GET "$repoUri/actions/runs/$($run.id)/artifacts" $H
+$arts = Invoke-Gh "GET" "$repoUri/actions/runs/$($run.id)/artifacts" $H
 $artifact = $arts.artifacts | Where-Object { $_.name -eq "family-library-debug-apk" } | Select-Object -First 1
 if (-not $artifact) { throw "APK artifact not found" }
 
