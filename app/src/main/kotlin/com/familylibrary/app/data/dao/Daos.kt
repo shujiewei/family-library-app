@@ -326,7 +326,7 @@ interface AppSettingsDao {
     suspend fun upsert(settings: AppSettings)
 
     @Transaction
-    suspend fun ensureExists(default: AppSettings) {
-        if (get() == null) upsert(default)
+    suspend fun ensureExists(initialSettings: AppSettings) {
+        if (get() == null) upsert(initialSettings)
     }
 }
