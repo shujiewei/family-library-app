@@ -17,6 +17,8 @@ import com.familylibrary.app.data.entity.ReadingRecord
 import com.familylibrary.app.data.entity.ShelfRow
 import com.familylibrary.app.data.entity.WishlistItem
 
+const val DB_SCHEMA_VERSION = 5
+
 @Database(
     entities = [
         Bookshelf::class,
@@ -27,8 +29,8 @@ import com.familylibrary.app.data.entity.WishlistItem
         WishlistItem::class,
         AppSettings::class,
     ],
-    version = SCHEMA_VERSION,
-    exportSchema = true,
+    version = DB_SCHEMA_VERSION,
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookshelfDao(): BookshelfDao
@@ -40,7 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appSettingsDao(): AppSettingsDao
 
     companion object {
-        const val SCHEMA_VERSION = 5
+        const val SCHEMA_VERSION = DB_SCHEMA_VERSION
         const val DB_NAME = "family_library.db"
     }
 }
