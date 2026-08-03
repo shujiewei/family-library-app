@@ -68,9 +68,8 @@ fun IsbnBarcodeScanner(
         future.addListener({
             try {
                 cameraProvider = future.get()
-                val preview = Preview.Builder().build().also {
-                    it.surfaceProvider = pv.surfaceProvider
-                }
+                val preview = Preview.Builder().build()
+                preview.setSurfaceProvider(pv.surfaceProvider)
                 val analysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
