@@ -129,7 +129,7 @@ class CoverService(private val context: Context) {
             }
             val check = isbn[9]
             val checkVal = if (check == 'X') 10 else check.digitToIntOrNull() ?: return false
-            return sum % 11 == checkVal
+            return (sum + checkVal) % 11 == 0
         }
 
         private fun isValidIsbn13(isbn: String): Boolean {
