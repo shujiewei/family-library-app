@@ -218,7 +218,7 @@ private fun RecordCard(r: ReadingRecordWithBook) {
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(12.dp)) {
             Text(r.bookTitle, style = MaterialTheme.typography.bodyLarge)
-            Text("${r.memberName} · ${r.finishDate ?: "进行中"}", style = MaterialTheme.typography.bodySmall)
+            Text("${r.memberName} · ${r.record.finishDate ?: "进行中"}", style = MaterialTheme.typography.bodySmall)
             if (r.bookCategory.isNotBlank()) Text("分类：${r.bookCategory}", style = MaterialTheme.typography.labelSmall)
         }
     }
