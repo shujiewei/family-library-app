@@ -1,0 +1,3 @@
+-keep class com.familylibrary.app.data.entity.** { *; }
+-keep class com.familylibrary.app.data.db.** { *; }
+-keep class com.google.mlkit.** { *; }
