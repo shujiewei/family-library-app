@@ -13,7 +13,7 @@ class IsbnChecksumTest {
 
     @Test
     fun validIsbn10() {
-        assertTrue(CoverService.isValidIsbn("0306406157"))
+        assertTrue(CoverService.isValidIsbn("0306406152"))
     }
 
     @Test
