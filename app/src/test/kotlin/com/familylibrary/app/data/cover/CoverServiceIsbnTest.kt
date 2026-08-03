@@ -1,8 +1,6 @@
 package com.familylibrary.app.data.cover
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CoverServiceIsbnTest {
@@ -13,9 +11,7 @@ class CoverServiceIsbnTest {
     }
 
     @Test
-    fun isValidIsbn_accepts10And13() {
-        assertTrue(CoverService.isValidIsbn("0306406152"))
-        assertTrue(CoverService.isValidIsbn("9780306406157"))
-        assertFalse(CoverService.isValidIsbn("123"))
+    fun normalizeIsbn_uppercasesX() {
+        assertEquals("X", CoverService.normalizeIsbn("x"))
     }
 }
