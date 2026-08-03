@@ -60,15 +60,27 @@ class ShelfViewModel(
     val moveTargets: StateFlow<List<MoveTarget>> = _moveTargets.asStateFlow()
 
     val uiState: StateFlow<ShelfUiState> = combine(
-        shelfRepo.observeBookshelves(),
-        _selectedBookshelfId,
-        _selectedRowId,
-        _selectedBookIds,
-        _isSelectionMode,
-        _isArchiveShelf,
-        _locationLabel,
-        _displayMode,
-    ) { bookshelvesRaw, shelfId, rowId, selectedIds, selectionMode, isArchive, locationLabel, displayMode ->
+        combine(
+            shelfRepo.observeBookshelves(),
+            _selectedBookshelfId,
+            _selectedRowId,
+        ) { bookshelvesRaw, shelfId, rowId ->
+            Triple(bookshelvesRaw, shelfId, rowId)
+        },
+        combine(
+            _selectedBookIds,
+            _isSelectionMode,
+            _isArchiveShelf,
+        ) { selectedIds, selectionMode, isArchive ->
+            Triple(selectedIds, selectionMode, isArchive)
+        },
+        combine(_locationLabel, _displayMode) { locationLabel, displayMode ->
+            locationLabel to displayMode
+        },
+    ) { shelfTriple, flagsTriple, labelPair ->
+        val (bookshelvesRaw, shelfId, rowId) = shelfTriple
+        val (selectedIds, selectionMode, isArchive) = flagsTriple
+        val (locationLabel, displayMode) = labelPair
         val bookshelves = shelfRepo.sortBookshelvesForDisplay(bookshelvesRaw)
         ShelfUiState(
             bookshelves = bookshelves,
