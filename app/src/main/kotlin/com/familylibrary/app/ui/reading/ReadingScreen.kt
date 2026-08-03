@@ -28,6 +28,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -206,7 +207,12 @@ private fun MemberStatsCard(stats: MemberReadingStats, members: List<FamilyMembe
     val member = members.find { it.id == stats.memberId }
     val color = MemberColors.getOrElse(member?.colorIndex ?: 0) { MemberColors.first() }
     Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
             Text(stats.memberName, style = MaterialTheme.typography.titleSmall, color = color)
             Text("${stats.bookCount} 本 · ${formatWordCount(stats.totalWordCount.toInt())}")
         }
@@ -235,7 +241,7 @@ private fun AddRecordDialog(
     var results by remember { mutableStateOf<List<com.familylibrary.app.data.entity.BookWithLocation>>(emptyList()) }
     var selectedBookId by remember { mutableStateOf<Long?>(null) }
     var notes by remember { mutableStateOf("") }
-    val scope = remember { androidx.compose.runtime.rememberCoroutineScope() }
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
