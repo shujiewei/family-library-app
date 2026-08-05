@@ -6,25 +6,31 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
-    primary = PrimaryBrown,
+    primary = AppPrimary,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD7CCC8),
-    onPrimaryContainer = OnSurfaceDark,
-    secondary = SecondaryGreen,
+    primaryContainer = AppPrimaryContainer,
+    onPrimaryContainer = AppForeground,
+    secondary = AppSecondary,
     onSecondary = Color.White,
-    background = BackgroundCream,
-    onBackground = OnSurfaceDark,
-    surface = SurfaceWhite,
-    onSurface = OnSurfaceDark,
-    surfaceVariant = Color(0xFFEFEBE9),
-    onSurfaceVariant = Color(0xFF5D4037),
-    tertiary = AccentOrange,
+    tertiary = AppAccent,
+    onTertiary = Color.White,
+    background = AppBackground,
+    onBackground = AppForeground,
+    surface = AppSurface,
+    onSurface = AppForeground,
+    surfaceVariant = AppSurfaceAlt,
+    onSurfaceVariant = AppMuted,
+    outline = AppOutline,
+    outlineVariant = AppOutline,
+    error = AppError,
+    onError = Color.White,
 )
 
 @Composable
 fun FamilyLibraryTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = LightColors,
+        typography = AppTypography,
         content = content,
     )
 }
