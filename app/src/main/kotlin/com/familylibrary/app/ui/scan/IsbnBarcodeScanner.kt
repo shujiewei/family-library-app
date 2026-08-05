@@ -36,7 +36,6 @@ fun IsbnBarcodeScanner(
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
-    val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
 
     AndroidView(
         factory = { ctx ->
@@ -52,6 +51,7 @@ fun IsbnBarcodeScanner(
         val pv = previewView
         if (!enabled || pv == null) return@DisposableEffect onDispose {}
 
+        val analyzerExecutor = Executors.newSingleThreadExecutor()
         val scanner = BarcodeScanning.getClient(
             BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(
