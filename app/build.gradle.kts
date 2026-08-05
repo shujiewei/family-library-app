@@ -14,13 +14,19 @@ android {
         applicationId = "com.familylibrary.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
     signingConfigs {
+        create("familyDebug") {
+            storeFile = file("keystore/family-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("releaseFamily") {
             val home = System.getProperty("user.home")
             val debugKeystore = File("$home/.android/debug.keystore")
@@ -43,8 +49,8 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("familyDebug")
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
         }
     }
 
