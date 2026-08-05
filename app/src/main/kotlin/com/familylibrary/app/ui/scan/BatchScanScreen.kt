@@ -41,14 +41,17 @@ import androidx.lifecycle.viewModelScope
 import com.familylibrary.app.FamilyLibraryApplication
 import com.familylibrary.app.ui.admin.AdminModeController
 import com.familylibrary.app.data.cover.CoverService
-import com.familylibrary.app.data.cover.IsbnLookupService
+import com.familylibrary.app.data.cover.IsbnTitleLookup
+import com.familylibrary.app.data.cover.IsbnTitleLookup
 import com.familylibrary.app.data.entity.Book
 import com.familylibrary.app.data.repository.BatchAddResult
 import com.familylibrary.app.ui.components.BatchAddResultDialog
 import com.familylibrary.app.ui.components.CameraPermissionGate
+import com.familylibrary.app.data.repository.BatchScanBooksGateway
 import com.familylibrary.app.data.repository.BookRepository
 import com.familylibrary.app.util.hasValidTitle
 import com.familylibrary.app.util.locationLabel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,10 +79,11 @@ data class BatchScanUiState(
 )
 
 class BatchScanViewModel(
-    private val bookRepo: BookRepository,
-    private val lookup: IsbnLookupService,
+    private val bookRepo: BatchScanBooksGateway,
+    private val lookup: IsbnTitleLookup,
     private val targetRowId: Long,
     private val targetLabel: String,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(BatchScanUiState())
@@ -93,7 +97,10 @@ class BatchScanViewModel(
 
     fun onIsbnScanned(rawIsbn: String) {
         val isbn = CoverService.normalizeIsbn(rawIsbn)
-        if (!CoverService.isValidIsbn(isbn)) return
+        if (!CoverService.isPlausibleIsbn(isbn)) {
+            _state.update { it.copy(lastMessage = "条码无法识别为 ISBN：$rawIsbn") }
+            return
+        }
         val now = System.currentTimeMillis()
         if (isbn == lastScanKey && now - lastScanAt < 2500) return
         lastScanKey = isbn
@@ -114,52 +121,71 @@ class BatchScanViewModel(
             )
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            val existing = bookRepo.findByIsbn(isbn)
-            if (existing != null) {
-                val detail = if (existing.book.shelfRowId == targetRowId) {
-                    "已在当前排：${existing.book.title}"
-                } else {
-                    "已在库（${existing.locationLabel()}）：${existing.book.title}"
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                val existing = bookRepo.findByIsbn(isbn)
+                if (existing != null) {
+                    val detail = if (existing.book.shelfRowId == targetRowId) {
+                        "已在当前排：${existing.book.title}"
+                    } else {
+                        "已在库（${existing.locationLabel()}）：${existing.book.title}"
+                    }
+                    _state.update { s ->
+                        s.copy(
+                            items = s.items.map { item ->
+                                if (item.isbn != isbn) item
+                                else item.copy(
+                                    title = existing.book.title,
+                                    author = existing.book.author,
+                                    isLookingUpTitle = false,
+                                    isDuplicate = true,
+                                    duplicateDetail = detail,
+                                )
+                            },
+                            lastMessage = detail,
+                        )
+                    }
+                    return@launch
                 }
+
+                val title = lookup.lookupTitle(isbn)
+                _state.update { s ->
+                    s.copy(
+                        items = s.items.map { item ->
+                            if (item.isbn != isbn) item
+                            else if (title != null) {
+                                item.copy(
+                                    title = title,
+                                    isLookingUpTitle = false,
+                                    needsManualTitle = false,
+                                )
+                            } else {
+                                item.copy(
+                                    isLookingUpTitle = false,
+                                    needsManualTitle = true,
+                                )
+                            }
+                        },
+                        lastMessage = if (title != null) {
+                            "已获取书名：$title"
+                        } else {
+                            "未找到书名（请检查网络或手动输入）：$isbn"
+                        },
+                    )
+                }
+            } catch (_: Exception) {
                 _state.update { s ->
                     s.copy(
                         items = s.items.map { item ->
                             if (item.isbn != isbn) item
                             else item.copy(
-                                title = existing.book.title,
-                                author = existing.book.author,
-                                isLookingUpTitle = false,
-                                isDuplicate = true,
-                                duplicateDetail = detail,
-                            )
-                        },
-                        lastMessage = detail,
-                    )
-                }
-                return@launch
-            }
-
-            val title = lookup.lookupTitle(isbn)
-            _state.update { s ->
-                s.copy(
-                    items = s.items.map { item ->
-                        if (item.isbn != isbn) item
-                        else if (title != null) {
-                            item.copy(
-                                title = title,
-                                isLookingUpTitle = false,
-                                needsManualTitle = false,
-                            )
-                        } else {
-                            item.copy(
                                 isLookingUpTitle = false,
                                 needsManualTitle = true,
                             )
-                        }
-                    },
-                    lastMessage = if (title != null) "已获取书名：$title" else "未找到书名：$isbn，请手动输入",
-                )
+                        },
+                        lastMessage = "书名查询失败，请手动输入：$isbn",
+                    )
+                }
             }
         }
     }
@@ -213,7 +239,7 @@ class BatchScanViewModel(
             _state.update { it.copy(lastMessage = "没有可录入的新书（均为重复）") }
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _state.update { it.copy(isSaving = true) }
             val books = toSave.map { item ->
                 Book(title = item.title.trim(), author = item.author, isbn = item.isbn)
