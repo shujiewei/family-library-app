@@ -33,52 +33,55 @@ fun ShelfPrimaryActionBar(
     onManualAdd: () -> Unit,
     onBatchText: () -> Unit,
 ) {
-    Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (isArchiveShelf) {
-                    Button(
-                        onClick = onScanOrganize,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Default.DriveFileMove, null, Modifier.padding(end = 4.dp))
-                        Text("扫码整理")
-                    }
-                } else {
-                    Button(
-                        onClick = onScanBatch,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Default.QrCodeScanner, null, Modifier.padding(end = 4.dp))
-                        Text("扫码录入")
-                    }
-                    OutlinedButton(
-                        onClick = onScanOrganize,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Default.DriveFileMove, null, Modifier.padding(end = 4.dp))
-                        Text("扫码整理")
+    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 0.dp, tonalElevation = 0.dp) {
+        Column(Modifier.fillMaxWidth()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (isArchiveShelf) {
+                        Button(
+                            onClick = onScanOrganize,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.DriveFileMove, null, Modifier.padding(end = 4.dp))
+                            Text("扫码整理")
+                        }
+                    } else {
+                        Button(
+                            onClick = onScanBatch,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.QrCodeScanner, null, Modifier.padding(end = 4.dp))
+                            Text("扫码录入")
+                        }
+                        OutlinedButton(
+                            onClick = onScanOrganize,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.DriveFileMove, null, Modifier.padding(end = 4.dp))
+                            Text("扫码整理")
+                        }
                     }
                 }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = onBatchMove, modifier = Modifier.weight(1f)) {
-                    Text("批量移动")
-                }
-                if (!isArchiveShelf) {
-                    OutlinedButton(onClick = onManualAdd, modifier = Modifier.weight(1f)) {
-                        Text("手动录入")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(onClick = onBatchMove, modifier = Modifier.weight(1f)) {
+                        Text("批量移动")
                     }
-                    OutlinedButton(onClick = onBatchText, modifier = Modifier.weight(1f)) {
-                        Text("批量文本")
+                    if (!isArchiveShelf) {
+                        OutlinedButton(onClick = onManualAdd, modifier = Modifier.weight(1f)) {
+                            Text("手动录入")
+                        }
+                        OutlinedButton(onClick = onBatchText, modifier = Modifier.weight(1f)) {
+                            Text("批量文本")
+                        }
                     }
                 }
             }
@@ -95,9 +98,9 @@ fun ShelfSelectionActionBar(
     onDelete: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    Surface(tonalElevation = 4.dp) {
+    Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 0.dp, tonalElevation = 0.dp) {
         Column(Modifier.fillMaxWidth()) {
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -148,7 +151,7 @@ fun ShelfSelectionActionBar(
 
 @Composable
 fun ShelfAdminHintBar(onRequestAdmin: () -> Unit) {
-    Surface(tonalElevation = 2.dp) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 0.dp, tonalElevation = 0.dp) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -159,6 +162,7 @@ fun ShelfAdminHintBar(onRequestAdmin: () -> Unit) {
             Text(
                 "录入与移动图书需管理员权限",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onRequestAdmin) { Text("管理员") }
