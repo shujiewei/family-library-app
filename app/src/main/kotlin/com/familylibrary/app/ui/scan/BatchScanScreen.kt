@@ -42,13 +42,11 @@ import com.familylibrary.app.FamilyLibraryApplication
 import com.familylibrary.app.ui.admin.AdminModeController
 import com.familylibrary.app.data.cover.CoverService
 import com.familylibrary.app.data.cover.IsbnTitleLookup
-import com.familylibrary.app.data.cover.IsbnTitleLookup
 import com.familylibrary.app.data.entity.Book
 import com.familylibrary.app.data.repository.BatchAddResult
 import com.familylibrary.app.ui.components.BatchAddResultDialog
 import com.familylibrary.app.ui.components.CameraPermissionGate
 import com.familylibrary.app.data.repository.BatchScanBooksGateway
-import com.familylibrary.app.data.repository.BookRepository
 import com.familylibrary.app.util.hasValidTitle
 import com.familylibrary.app.util.locationLabel
 import kotlinx.coroutines.CoroutineDispatcher
