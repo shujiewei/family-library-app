@@ -106,7 +106,7 @@ fun BookFormDialog(
     LaunchedEffect(state.isbn, isbnLookup) {
         val lookup = isbnLookup ?: return@LaunchedEffect
         val normalized = CoverService.normalizeIsbn(state.isbn)
-        if (!CoverService.isValidIsbn(normalized)) {
+        if (!CoverService.isPlausibleIsbn(normalized)) {
             lookupMessage = null
             return@LaunchedEffect
         }
@@ -114,18 +114,27 @@ fun BookFormDialog(
         if (CoverService.normalizeIsbn(state.isbn) != normalized) return@LaunchedEffect
         isLookingUpTitle = true
         lookupMessage = null
-        val info = withContext(Dispatchers.IO) { lookup.lookup(normalized) }
-        isLookingUpTitle = false
-        if (info != null) {
-            state = state.copy(
-                title = if (state.title.isBlank()) info.title else state.title,
-                author = if (state.author.isBlank()) info.author else state.author,
-                publisher = if (state.publisher.isBlank()) info.publisher else state.publisher,
-                pageCount = if (state.pageCount.isBlank() && info.pageCount > 0) info.pageCount.toString() else state.pageCount,
-                description = if (state.description.isBlank()) info.description else state.description,
-            )
-        } else if (state.title.isBlank()) {
-            lookupMessage = "未找到书名，请手动填写"
+        try {
+            val info = withContext(Dispatchers.IO) { lookup.lookup(normalized) }
+            if (info != null) {
+                state = state.copy(
+                    title = if (state.title.isBlank()) info.title else state.title,
+                    author = if (state.author.isBlank()) info.author else state.author,
+                    publisher = if (state.publisher.isBlank()) info.publisher else state.publisher,
+                    pageCount = if (state.pageCount.isBlank() && info.pageCount > 0) {
+                        info.pageCount.toString()
+                    } else {
+                        state.pageCount
+                    },
+                    description = if (state.description.isBlank()) info.description else state.description,
+                )
+            } else if (state.title.isBlank()) {
+                lookupMessage = "未找到书名（请检查网络或手动填写）"
+            }
+        } catch (_: Exception) {
+            lookupMessage = "书名查询失败，请手动填写"
+        } finally {
+            isLookingUpTitle = false
         }
     }
 
@@ -264,24 +273,35 @@ fun BookFormDialog(
                 val normalized = CoverService.normalizeIsbn(isbn)
                 state = state.copy(isbn = normalized)
                 lookupMessage = null
-                if (isbnLookup != null && CoverService.isValidIsbn(normalized)) {
+                if (isbnLookup != null && CoverService.isPlausibleIsbn(normalized)) {
                     scope.launch {
                         isLookingUpTitle = true
-                        val info = withContext(Dispatchers.IO) { isbnLookup.lookup(normalized) }
-                        isLookingUpTitle = false
-                        if (info != null) {
-                            state = state.copy(
-                                title = if (state.title.isBlank()) info.title else state.title,
-                                author = if (state.author.isBlank()) info.author else state.author,
-                                publisher = if (state.publisher.isBlank()) info.publisher else state.publisher,
-                                pageCount = if (state.pageCount.isBlank() && info.pageCount > 0) {
-                                    info.pageCount.toString()
-                                } else state.pageCount,
-                                description = if (state.description.isBlank()) info.description else state.description,
-                            )
-                            lookupMessage = null
-                        } else {
-                            lookupMessage = "未找到书名，请手动填写"
+                        try {
+                            val info = withContext(Dispatchers.IO) { isbnLookup.lookup(normalized) }
+                            if (info != null) {
+                                state = state.copy(
+                                    title = if (state.title.isBlank()) info.title else state.title,
+                                    author = if (state.author.isBlank()) info.author else state.author,
+                                    publisher = if (state.publisher.isBlank()) info.publisher else state.publisher,
+                                    pageCount = if (state.pageCount.isBlank() && info.pageCount > 0) {
+                                        info.pageCount.toString()
+                                    } else {
+                                        state.pageCount
+                                    },
+                                    description = if (state.description.isBlank()) {
+                                        info.description
+                                    } else {
+                                        state.description
+                                    },
+                                )
+                                lookupMessage = null
+                            } else {
+                                lookupMessage = "未找到书名（请检查网络或手动填写）"
+                            }
+                        } catch (_: Exception) {
+                            lookupMessage = "书名查询失败，请手动填写"
+                        } finally {
+                            isLookingUpTitle = false
                         }
                     }
                 }
