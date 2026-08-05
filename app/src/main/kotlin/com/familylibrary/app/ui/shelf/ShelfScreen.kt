@@ -20,22 +20,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +52,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.familylibrary.app.FamilyLibraryApplication
 import com.familylibrary.app.data.ArchiveConfig
 import com.familylibrary.app.data.entity.BookWithLocation
+import com.familylibrary.app.data.entity.Bookshelf
+import com.familylibrary.app.data.entity.ShelfRow
 import com.familylibrary.app.data.preferences.ShelfDisplayMode
 import com.familylibrary.app.data.repository.BatchAddResult
 import com.familylibrary.app.ui.admin.AdminModeController
@@ -78,6 +74,7 @@ fun ShelfScreen(
     onBookClick: (Long) -> Unit,
     onScanBatch: (rowId: Long, locationLabel: String) -> Unit,
     onScanOrganize: (rowId: Long, locationLabel: String) -> Unit,
+    onRequestAdmin: () -> Unit = {},
     adminController: AdminModeController = app.serviceLocator.adminModeController,
     vm: ShelfViewModel = viewModel(factory = ShelfViewModel.Factory(app)),
 ) {
@@ -91,12 +88,24 @@ fun ShelfScreen(
 
     var showAddShelf by remember { mutableStateOf(false) }
     var showAddRow by remember { mutableStateOf(false) }
+    var editingShelf by remember { mutableStateOf<Bookshelf?>(null) }
+    var editingRow by remember { mutableStateOf<ShelfRow?>(null) }
+    var pendingDeleteShelfId by remember { mutableStateOf<Long?>(null) }
+    var pendingDeleteRowId by remember { mutableStateOf<Long?>(null) }
     var showAddBook by remember { mutableStateOf(false) }
     var showBatchAdd by remember { mutableStateOf(false) }
     var isBatchAdding by remember { mutableStateOf(false) }
     var batchAddResult by remember { mutableStateOf<BatchAddResult?>(null) }
     var showMoveDialog by remember { mutableStateOf(false) }
     var editingBook by remember { mutableStateOf<com.familylibrary.app.data.entity.Book?>(null) }
+
+    val selectedShelf = uiState.bookshelves.find { it.id == uiState.selectedBookshelfId }
+    val selectedRow = rows.find { it.id == uiState.selectedRowId }
+    val locationDescription = when {
+        selectedRow?.description?.isNotBlank() == true -> selectedRow.description
+        selectedShelf?.description?.isNotBlank() == true -> selectedShelf.description
+        else -> ""
+    }
 
     Scaffold(
         topBar = {
@@ -108,6 +117,14 @@ fun ShelfScreen(
                             Text(
                                 uiState.currentLocationLabel,
                                 style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        if (locationDescription.isNotBlank()) {
+                            Text(
+                                locationDescription,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
                             )
                         }
                     }
@@ -127,59 +144,45 @@ fun ShelfScreen(
                         IconButton(onClick = { touchAdmin(); vm.selectAll() }) {
                             Icon(Icons.Default.SelectAll, "全选")
                         }
-                        IconButton(
-                            onClick = { touchAdmin(); showMoveDialog = true },
-                            enabled = uiState.selectedBookIds.isNotEmpty(),
-                        ) {
-                            Icon(Icons.Default.DriveFileMove, "移动")
-                        }
-                        if (!uiState.isArchiveShelf) {
-                            IconButton(
-                                onClick = { touchAdmin(); vm.archiveSelectedBooks() },
-                                enabled = uiState.selectedBookIds.isNotEmpty(),
-                            ) {
-                                Icon(Icons.Default.Archive, "归档")
-                            }
-                        }
-                        IconButton(
-                            onClick = { touchAdmin(); vm.deleteSelectedBooks() },
-                            enabled = uiState.selectedBookIds.isNotEmpty(),
-                        ) {
-                            Icon(Icons.Default.Delete, "删除")
-                        }
-                        TextButton(onClick = { vm.clearSelection() }) { Text("取消") }
                     }
                 },
             )
         },
-        floatingActionButton = {
-            if (isAdmin && uiState.selectedRowId != null && !uiState.isSelectionMode) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FloatingActionButton(
-                        onClick = {
+        bottomBar = {
+            when {
+                isAdmin && uiState.isSelectionMode -> {
+                    ShelfSelectionActionBar(
+                        selectedCount = uiState.selectedBookIds.size,
+                        isArchiveShelf = uiState.isArchiveShelf,
+                        onMove = { touchAdmin(); showMoveDialog = true },
+                        onArchive = { touchAdmin(); vm.archiveSelectedBooks() },
+                        onDelete = { touchAdmin(); vm.deleteSelectedBooks() },
+                        onCancel = { vm.clearSelection() },
+                    )
+                }
+                isAdmin && uiState.selectedRowId != null -> {
+                    ShelfPrimaryActionBar(
+                        isArchiveShelf = uiState.isArchiveShelf,
+                        onScanBatch = {
                             touchAdmin()
-                            val rowId = uiState.selectedRowId ?: return@FloatingActionButton
+                            val rowId = uiState.selectedRowId ?: return@ShelfPrimaryActionBar
+                            onScanBatch(rowId, uiState.currentLocationLabel)
+                        },
+                        onScanOrganize = {
+                            touchAdmin()
+                            val rowId = uiState.selectedRowId ?: return@ShelfPrimaryActionBar
                             onScanOrganize(rowId, uiState.currentLocationLabel)
                         },
-                        modifier = Modifier.size(48.dp),
-                    ) { Icon(Icons.Default.DriveFileMove, "扫码整理") }
-                    if (!uiState.isArchiveShelf) {
-                        FloatingActionButton(onClick = { touchAdmin(); showBatchAdd = true },
-                            modifier = Modifier.size(48.dp),
-                        ) { Text("批", style = MaterialTheme.typography.labelMedium) }
-                        FloatingActionButton(onClick = { touchAdmin(); showAddBook = true },
-                            modifier = Modifier.size(48.dp),
-                        ) { Icon(Icons.Default.Add, "手动录入") }
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                touchAdmin()
-                                val rowId = uiState.selectedRowId ?: return@ExtendedFloatingActionButton
-                                onScanBatch(rowId, uiState.currentLocationLabel)
-                            },
-                            icon = { Icon(Icons.Default.QrCodeScanner, null) },
-                            text = { Text("扫码录入") },
-                        )
-                    }
+                        onBatchMove = {
+                            touchAdmin()
+                            vm.enterSelectionMode()
+                        },
+                        onManualAdd = { touchAdmin(); showAddBook = true },
+                        onBatchText = { touchAdmin(); showBatchAdd = true },
+                    )
+                }
+                !isAdmin && uiState.selectedRowId != null -> {
+                    ShelfAdminHintBar(onRequestAdmin = onRequestAdmin)
                 }
             }
         },
@@ -209,7 +212,15 @@ fun ShelfScreen(
                     }
                 }
                 if (isAdmin) {
-                    IconButton(onClick = { showAddShelf = true }) {
+                    if (uiState.selectedBookshelfId != null) {
+                        IconButton(onClick = {
+                            touchAdmin()
+                            editingShelf = selectedShelf
+                        }) {
+                            Icon(Icons.Default.Edit, "编辑书架")
+                        }
+                    }
+                    IconButton(onClick = { touchAdmin(); showAddShelf = true }) {
                         Icon(Icons.Default.Add, "新建书架")
                     }
                 }
@@ -233,7 +244,15 @@ fun ShelfScreen(
                         }
                     }
                     if (isAdmin && uiState.selectedBookshelfId != null) {
-                        IconButton(onClick = { showAddRow = true }) {
+                        if (uiState.selectedRowId != null) {
+                            IconButton(onClick = {
+                                touchAdmin()
+                                editingRow = selectedRow
+                            }) {
+                                Icon(Icons.Default.Edit, "编辑排")
+                            }
+                        }
+                        IconButton(onClick = { touchAdmin(); showAddRow = true }) {
                             Icon(Icons.Default.Add, "新建排")
                         }
                     }
@@ -248,7 +267,26 @@ fun ShelfScreen(
 
             if (uiState.selectedRowId == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("请选择书架和排", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(24.dp),
+                    ) {
+                        Text("请选择书架和排", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (isAdmin) {
+                            Text(
+                                "或点上方 ＋ 新建书架 / 新建排",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Text(
+                                "查看图书无需管理员；录入请前往设置开启管理员",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             } else if (books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -260,33 +298,12 @@ fun ShelfScreen(
                             if (uiState.isArchiveShelf) "归档区暂无图书" else "此排暂无图书",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (isAdmin && uiState.selectedRowId != null) {
-                            if (uiState.isArchiveShelf) {
-                                Button(
-                                    onClick = {
-                                        val rowId = uiState.selectedRowId ?: return@Button
-                                        onScanOrganize(rowId, uiState.currentLocationLabel)
-                                    },
-                                ) {
-                                    Icon(Icons.Default.DriveFileMove, null, Modifier.size(18.dp))
-                                    Text("扫码整理", modifier = Modifier.padding(start = 8.dp))
-                                }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        val rowId = uiState.selectedRowId ?: return@Button
-                                        onScanBatch(rowId, uiState.currentLocationLabel)
-                                    },
-                                ) {
-                                    Icon(Icons.Default.QrCodeScanner, null, Modifier.size(18.dp))
-                                    Text("扫码录入", modifier = Modifier.padding(start = 8.dp))
-                                }
-                                Text(
-                                    "或点右下角更多录入方式",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        if (isAdmin) {
+                            Text(
+                                "请使用下方操作栏开始录入",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -296,6 +313,26 @@ fun ShelfScreen(
                         mode = uiState.displayMode,
                         onModeChange = vm::setDisplayMode,
                     )
+                    if (isAdmin && !uiState.isSelectionMode) {
+                        Text(
+                            "提示：点「批量移动」或长按图书多选",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                        )
+                    }
+                    if (uiState.isSelectionMode) {
+                        Text(
+                            if (uiState.selectedBookIds.isEmpty()) {
+                                "请选择要操作的图书"
+                            } else {
+                                "已选 ${uiState.selectedBookIds.size} 本，使用底部按钮移动/删除"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
+                    }
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -335,6 +372,26 @@ fun ShelfScreen(
                         mode = uiState.displayMode,
                         onModeChange = vm::setDisplayMode,
                     )
+                    if (isAdmin && !uiState.isSelectionMode) {
+                        Text(
+                            "提示：点「批量移动」或长按图书多选",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                        )
+                    }
+                    if (uiState.isSelectionMode) {
+                        Text(
+                            if (uiState.selectedBookIds.isEmpty()) {
+                                "请选择要操作的图书"
+                            } else {
+                                "已选 ${uiState.selectedBookIds.size} 本，使用底部按钮移动/删除"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
+                    }
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(100.dp),
                         contentPadding = PaddingValues(8.dp),
@@ -368,16 +425,94 @@ fun ShelfScreen(
     }
 
     if (showAddShelf) {
-        NameDialog("新建书架", onDismiss = { showAddShelf = false }) { name ->
-            vm.createBookshelf(name)
-            showAddShelf = false
-        }
+        ShelfManageDialog(
+            title = "新建书架",
+            onDismiss = { showAddShelf = false },
+            onConfirm = { name, description ->
+                vm.createBookshelf(name, description)
+                showAddShelf = false
+            },
+        )
     }
     if (showAddRow) {
-        NameDialog("新建排", onDismiss = { showAddRow = false }) { name ->
-            vm.createRow(name)
-            showAddRow = false
-        }
+        ShelfManageDialog(
+            title = "新建排",
+            onDismiss = { showAddRow = false },
+            onConfirm = { name, description ->
+                vm.createRow(name, description)
+                showAddRow = false
+            },
+        )
+    }
+    editingShelf?.let { shelf ->
+        val isArchive = ArchiveConfig.isArchiveShelf(shelf.name)
+        ShelfManageDialog(
+            title = if (isArchive) "编辑归档书架" else "编辑书架",
+            initialName = shelf.name,
+            initialDescription = shelf.description,
+            allowRename = !isArchive,
+            allowDelete = !isArchive,
+            onDismiss = { editingShelf = null },
+            onConfirm = { name, description ->
+                vm.updateBookshelf(shelf.id, name, description)
+                editingShelf = null
+            },
+            onDelete = { pendingDeleteShelfId = shelf.id; editingShelf = null },
+        )
+    }
+    editingRow?.let { row ->
+        val isArchiveRow = uiState.isArchiveShelf
+        ShelfManageDialog(
+            title = if (isArchiveRow) "编辑归档排" else "编辑排",
+            initialName = row.name,
+            initialDescription = row.description,
+            allowRename = !isArchiveRow,
+            allowDelete = !isArchiveRow,
+            onDismiss = { editingRow = null },
+            onConfirm = { name, description ->
+                vm.updateRow(row.id, name, description)
+                editingRow = null
+            },
+            onDelete = { pendingDeleteRowId = row.id; editingRow = null },
+        )
+    }
+    pendingDeleteShelfId?.let { shelfId ->
+        val shelf = uiState.bookshelves.find { it.id == shelfId }
+        AlertDialog(
+            onDismissRequest = { pendingDeleteShelfId = null },
+            title = { Text("删除书架") },
+            text = {
+                Text("确定删除「${shelf?.name ?: ""}」？其下所有排将被删除，图书将变为未上架。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteBookshelf(shelfId)
+                    pendingDeleteShelfId = null
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteShelfId = null }) { Text("取消") }
+            },
+        )
+    }
+    pendingDeleteRowId?.let { rowId ->
+        val row = rows.find { it.id == rowId }
+        AlertDialog(
+            onDismissRequest = { pendingDeleteRowId = null },
+            title = { Text("删除排") },
+            text = {
+                Text("确定删除「${row?.name ?: ""}」？此排上的图书将变为未上架。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteRow(rowId)
+                    pendingDeleteRowId = null
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteRowId = null }) { Text("取消") }
+            },
+        )
     }
     if (showAddBook) {
         BookFormDialog(
@@ -523,22 +658,55 @@ private fun BookGridItem(
 }
 
 @Composable
-private fun NameDialog(title: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
+private fun ShelfManageDialog(
+    title: String,
+    initialName: String = "",
+    initialDescription: String = "",
+    allowRename: Boolean = true,
+    allowDelete: Boolean = false,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, description: String) -> Unit,
+    onDelete: (() -> Unit)? = null,
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var description by remember(initialDescription) { mutableStateOf(initialDescription) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("名称") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                    enabled = allowRename,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("描述/备注") },
+                    placeholder = { Text("如：客厅左侧、儿童绘本区…") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (allowDelete && onDelete != null) {
+                    TextButton(onClick = onDelete, modifier = Modifier.align(Alignment.End)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("删除", modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name.trim()) }, enabled = name.isNotBlank()) { Text("确定") }
+            TextButton(
+                onClick = { onConfirm(name.trim(), description.trim()) },
+                enabled = name.isNotBlank(),
+            ) { Text("保存") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
