@@ -175,6 +175,7 @@ fun FamilyLibraryApp(app: FamilyLibraryApplication) {
                     isAdmin = isAdmin,
                     app = app,
                     onBookClick = { id -> navController.navigate("book/$id") },
+                    onRequestAdmin = { showPinDialog = true },
                     onScanBatch = { rowId, label ->
                         navController.navigate(
                             "batch_scan/$rowId?label=${URLEncoder.encode(label, "UTF-8")}",
