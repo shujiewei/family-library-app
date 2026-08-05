@@ -16,8 +16,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -45,6 +48,8 @@ import com.familylibrary.app.ui.search.BookDetailScreen
 import com.familylibrary.app.ui.search.SearchScreen
 import com.familylibrary.app.ui.settings.SettingsScreen
 import com.familylibrary.app.ui.shelf.ShelfScreen
+import com.familylibrary.app.ui.theme.AppForeground
+import com.familylibrary.app.ui.theme.AppMuted
 import com.familylibrary.app.ui.theme.FamilyLibraryTheme
 import com.familylibrary.app.ui.wishlist.WishlistScanScreen
 import com.familylibrary.app.ui.wishlist.WishlistScreen
@@ -129,9 +134,13 @@ fun FamilyLibraryApp(app: FamilyLibraryApplication) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    tonalElevation = 0.dp,
+                ) {
                     tabs.forEach { tab ->
                         val icon = when (tab) {
                             Tab.Search -> Icons.Default.Search
@@ -152,6 +161,13 @@ fun FamilyLibraryApp(app: FamilyLibraryApplication) {
                             },
                             icon = { Icon(icon, tab.label) },
                             label = { Text(tab.label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = AppForeground,
+                                selectedTextColor = AppForeground,
+                                unselectedIconColor = AppMuted,
+                                unselectedTextColor = AppMuted,
+                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                            ),
                         )
                     }
                 }
