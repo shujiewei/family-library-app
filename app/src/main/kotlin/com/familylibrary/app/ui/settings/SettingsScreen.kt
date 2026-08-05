@@ -137,7 +137,10 @@ fun SettingsScreen(
             Modifier.padding(padding).fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("家庭图书馆 v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "家庭图书馆 v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.titleMedium,
+            )
             Text("图书数据本地存储；封面通过 ISBN 从网络拉取", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Text("权限说明", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
