@@ -16,7 +16,7 @@ mlkitBarcode = "17.3.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 coroutines = "1.8.1"
-roomTesting = "2.6.1"
+archCore = "2.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -45,7 +45,8 @@ mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning"
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
-androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "roomTesting" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+androidx-arch-core-testing = { group = "androidx.arch.core", name = "core-testing", version.ref = "archCore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
