@@ -184,15 +184,27 @@ class ShelfViewModel(
         }
     }
 
-    fun createBookshelf(name: String) = viewModelScope.launch {
-        shelfRepo.createBookshelf(name)
+    fun createBookshelf(name: String, description: String = "") = viewModelScope.launch {
+        shelfRepo.createBookshelf(name, description)
         refreshMoveTargets()
     }
 
-    fun createRow(name: String) = viewModelScope.launch {
+    fun createRow(name: String, description: String = "") = viewModelScope.launch {
         val shelfId = _selectedBookshelfId.value ?: return@launch
-        shelfRepo.createRow(shelfId, name)
+        shelfRepo.createRow(shelfId, name, description)
         refreshMoveTargets()
+    }
+
+    fun updateBookshelf(id: Long, name: String, description: String) = viewModelScope.launch {
+        shelfRepo.updateBookshelf(id, name, description)
+        refreshMoveTargets()
+        updateLocationLabel()
+    }
+
+    fun updateRow(id: Long, name: String, description: String) = viewModelScope.launch {
+        shelfRepo.updateRow(id, name, description)
+        refreshMoveTargets()
+        updateLocationLabel()
     }
 
     fun deleteBookshelf(id: Long) = viewModelScope.launch {
