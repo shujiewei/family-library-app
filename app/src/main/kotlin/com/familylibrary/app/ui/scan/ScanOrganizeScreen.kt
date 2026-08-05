@@ -80,7 +80,10 @@ class ScanOrganizeViewModel(
 
     fun onIsbnScanned(rawIsbn: String) {
         val isbn = CoverService.normalizeIsbn(rawIsbn)
-        if (!CoverService.isValidIsbn(isbn)) return
+        if (!CoverService.isPlausibleIsbn(isbn)) {
+            _state.update { it.copy(lastMessage = "条码无法识别为 ISBN：$rawIsbn") }
+            return
+        }
         val now = System.currentTimeMillis()
         if (isbn == lastScanKey && now - lastScanAt < 2500) return
         lastScanKey = isbn
