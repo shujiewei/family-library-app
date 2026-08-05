@@ -8,6 +8,7 @@ import androidx.room.PrimaryKey
 data class Bookshelf(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    val description: String = "",
     val sortOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
 )
@@ -17,6 +18,7 @@ data class ShelfRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val bookshelfId: Long,
     val name: String,
+    val description: String = "",
     val sortOrder: Int = 0,
 )
 
