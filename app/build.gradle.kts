@@ -14,8 +14,8 @@ android {
         applicationId = "com.familylibrary.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -28,9 +28,10 @@ android {
             keyPassword = "android"
         }
         create("releaseFamily") {
-            val home = System.getProperty("user.home")
-            val debugKeystore = File("$home/.android/debug.keystore")
-            storeFile = debugKeystore
+            val familyKeystore = file("keystore/family-debug.keystore")
+            storeFile = if (familyKeystore.exists()) familyKeystore else File(
+                "${System.getProperty("user.home")}/.android/debug.keystore",
+            )
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
@@ -50,7 +51,8 @@ android {
         debug {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("familyDebug")
-            applicationIdSuffix = ".debug"
+            // 不再使用 .debug 后缀：旧 CI 随机签名包为 com.familylibrary.app.debug，
+            // 与本包 com.familylibrary.app 并存，避免「开发者签名冲突」无法覆盖安装。
         }
     }
 
