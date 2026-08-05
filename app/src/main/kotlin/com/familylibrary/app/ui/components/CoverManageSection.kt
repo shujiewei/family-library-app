@@ -59,15 +59,13 @@ fun CoverManageSection(
 
     fun handleResult(result: CoverActionResult) {
         when (result) {
-            CoverActionResult.Success -> {
-                onMessage("封面已更新")
-                reloadBook()
-            }
+            CoverActionResult.Success -> onMessage("封面已更新")
             CoverActionResult.NoIsbn -> onMessage("请先填写 ISBN")
             CoverActionResult.SkippedCustom -> onMessage("已使用自定义封面，如需网络封面请点「重新拉取」")
             is CoverActionResult.Failed -> onMessage(result.message)
             CoverActionResult.NotFound -> onMessage("图书不存在")
         }
+        reloadBook()
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
