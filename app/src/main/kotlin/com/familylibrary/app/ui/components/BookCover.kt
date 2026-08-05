@@ -24,7 +24,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.familylibrary.app.data.cover.CoverService
 import com.familylibrary.app.data.entity.CoverMeta
-import com.familylibrary.app.ui.theme.PrimaryBrownLight
+import com.familylibrary.app.ui.theme.CoverPlaceholder
 import java.io.File
 
 @Composable
@@ -42,7 +42,7 @@ fun BookCover(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(PrimaryBrownLight.copy(alpha = 0.3f)),
+            .background(CoverPlaceholder),
         contentAlignment = Alignment.Center,
     ) {
         if (imageFile != null) {
