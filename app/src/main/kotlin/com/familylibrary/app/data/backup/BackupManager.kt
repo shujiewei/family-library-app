@@ -120,11 +120,11 @@ object BackupManager {
     }
 
     private fun bookshelfJson(b: Bookshelf) = buildString {
-        append("{\"id\":${b.id},\"name\":${Json.string(b.name)},\"sortOrder\":${b.sortOrder},\"createdAt\":${b.createdAt}}")
+        append("{\"id\":${b.id},\"name\":${Json.string(b.name)},\"description\":${Json.string(b.description)},\"sortOrder\":${b.sortOrder},\"createdAt\":${b.createdAt}}")
     }
 
     private fun rowJson(r: ShelfRow) = buildString {
-        append("{\"id\":${r.id},\"bookshelfId\":${r.bookshelfId},\"name\":${Json.string(r.name)},\"sortOrder\":${r.sortOrder}}")
+        append("{\"id\":${r.id},\"bookshelfId\":${r.bookshelfId},\"name\":${Json.string(r.name)},\"description\":${Json.string(r.description)},\"sortOrder\":${r.sortOrder}}")
     }
 
     private fun bookJson(b: Book) = buildString {
@@ -205,6 +205,7 @@ object BackupManager {
     private fun bookshelfFrom(m: Map<String, Any?>) = Bookshelf(
         id = (m["id"] as Number).toLong(),
         name = m["name"] as String,
+        description = m["description"] as? String ?: "",
         sortOrder = (m["sortOrder"] as Number).toInt(),
         createdAt = (m["createdAt"] as Number).toLong(),
     )
@@ -213,6 +214,7 @@ object BackupManager {
         id = (m["id"] as Number).toLong(),
         bookshelfId = (m["bookshelfId"] as Number).toLong(),
         name = m["name"] as String,
+        description = m["description"] as? String ?: "",
         sortOrder = (m["sortOrder"] as Number).toInt(),
     )
 
