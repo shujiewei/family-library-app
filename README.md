@@ -2,6 +2,18 @@
 
 单机单用户的家庭图书管理 Android 应用，数据全部存储在本地，核心功能无需联网。
 
+**当前版本**：1.1.0（`versionCode` 2）
+
+## 安装 / 更新 APK
+
+| 情况 | 做法 |
+|------|------|
+| 提示「已安装相同版本」 | 旧 APK 的 `versionCode` 相同 → 请安装 **最新构建**（本仓库 CI 产物） |
+| 仍无法覆盖 | 长按图标 → **卸载**旧版 → 再装新版（本地数据会清空，请先导出 ZIP 备份） |
+| debug 包名 | `com.familylibrary.app.debug`，与 release 可共存 |
+
+每次发新版前开发侧会递增 `app/build.gradle.kts` 里的 `versionCode`。
+
 ## 功能
 
 | 模块 | 说明 |
