@@ -36,17 +36,21 @@ class ShelfRepository(
     fun observeBooksInRow(shelfRowId: Long): Flow<List<BookWithLocation>> =
         bookDao.observeByShelfRow(shelfRowId)
 
-    suspend fun createBookshelf(name: String): Long {
+    suspend fun createBookshelf(name: String, description: String = ""): Long {
         val all = bookshelfDao.getAll()
-        return bookshelfDao.insert(Bookshelf(name = name, sortOrder = all.size))
+        return bookshelfDao.insert(Bookshelf(name = name, description = description, sortOrder = all.size))
     }
 
-    suspend fun createRow(bookshelfId: Long, name: String): Long {
+    suspend fun createRow(bookshelfId: Long, name: String, description: String = ""): Long {
         val rows = shelfRowDao.getByBookshelf(bookshelfId)
-        return shelfRowDao.insert(ShelfRow(bookshelfId = bookshelfId, name = name, sortOrder = rows.size))
+        return shelfRowDao.insert(
+            ShelfRow(bookshelfId = bookshelfId, name = name, description = description, sortOrder = rows.size),
+        )
     }
 
     suspend fun deleteBookshelf(id: Long) {
+        val shelf = bookshelfDao.getAll().find { it.id == id } ?: return
+        if (ArchiveConfig.isArchiveShelf(shelf.name)) return
         val rows = shelfRowDao.getByBookshelf(id)
         rows.forEach { row ->
             val books = bookDao.getByShelfRow(row.id)
@@ -59,6 +63,7 @@ class ShelfRepository(
     }
 
     suspend fun deleteRow(id: Long) {
+        if (isArchiveRow(id)) return
         val books = bookDao.getByShelfRow(id)
         books.forEach { book ->
             bookDao.update(book.copy(shelfRowId = null, updatedAt = System.currentTimeMillis()))
@@ -66,14 +71,22 @@ class ShelfRepository(
         shelfRowDao.deleteById(id)
     }
 
-    suspend fun renameBookshelf(id: Long, name: String) {
+    suspend fun updateBookshelf(id: Long, name: String, description: String) {
         val shelf = bookshelfDao.getAll().find { it.id == id } ?: return
-        bookshelfDao.update(shelf.copy(name = name))
+        if (ArchiveConfig.isArchiveShelf(shelf.name)) {
+            bookshelfDao.update(shelf.copy(description = description))
+            return
+        }
+        bookshelfDao.update(shelf.copy(name = name, description = description))
     }
 
-    suspend fun renameRow(id: Long, name: String) {
+    suspend fun updateRow(id: Long, name: String, description: String) {
         val row = shelfRowDao.getAll().find { it.id == id } ?: return
-        shelfRowDao.update(row.copy(name = name))
+        if (isArchiveRow(id)) {
+            shelfRowDao.update(row.copy(description = description))
+            return
+        }
+        shelfRowDao.update(row.copy(name = name, description = description))
     }
 
     /** 确保「归档」书架存在，返回归档排 id */
@@ -125,7 +138,7 @@ class BookRepository(
     private val coverService: CoverService,
     private val isbnLookup: IsbnLookupService,
     private val backgroundScope: CoroutineScope,
-) {
+) : BatchScanBooksGateway {
     private val enrichSemaphore = Semaphore(3)
 
     fun observeAll(): Flow<List<BookWithLocation>> = bookDao.observeAllWithLocation()
@@ -137,7 +150,7 @@ class BookRepository(
     suspend fun search(query: String): List<BookWithLocation> =
         if (query.isBlank()) emptyList() else bookDao.search(query.trim())
 
-    suspend fun findByIsbn(isbn: String): BookWithLocation? {
+    override suspend fun findByIsbn(isbn: String): BookWithLocation? {
         val normalized = CoverService.normalizeIsbn(isbn)
         if (normalized.isBlank()) return null
         return bookDao.findByIsbn(normalized)
@@ -211,7 +224,7 @@ class BookRepository(
         return BatchAddResult(addedCount = added.size, failures = failed)
     }
 
-    suspend fun addScannedBooks(books: List<Book>, shelfRowId: Long): BatchAddResult {
+    override suspend fun addScannedBooks(books: List<Book>, shelfRowId: Long): BatchAddResult {
         if (books.isEmpty()) return BatchAddResult(0, emptyList())
         val added = mutableListOf<Long>()
         val failed = mutableListOf<BatchAddFailure>()
@@ -272,25 +285,35 @@ class BookRepository(
     }
 
     private suspend fun enrichBookFromIsbn(bookId: Long, isbn: String) {
-        var book = bookDao.getById(bookId) ?: return
-        if (book.coverSource == CoverMeta.SOURCE_CUSTOM) return
+        try {
+            var book = bookDao.getById(bookId) ?: return
+            if (book.coverSource == CoverMeta.SOURCE_CUSTOM) return
 
-        if (needsSupplementalMetadata(book)) {
-            val info = isbnLookup.lookupSupplemental(isbn)
-            if (info != null) {
-                book = book.copy(
-                    author = info.author.takeIf { book.author.isBlank() } ?: book.author,
-                    publisher = info.publisher.takeIf { book.publisher.isBlank() } ?: book.publisher,
-                    pageCount = if (book.pageCount == 0) info.pageCount else book.pageCount,
-                    description = info.description.takeIf { book.description.isBlank() } ?: book.description,
-                    updatedAt = System.currentTimeMillis(),
-                )
-                bookDao.update(book)
+            if (needsSupplementalMetadata(book)) {
+                val info = isbnLookup.lookupSupplemental(isbn)
+                if (info != null) {
+                    book = book.copy(
+                        author = info.author.takeIf { book.author.isBlank() } ?: book.author,
+                        publisher = info.publisher.takeIf { book.publisher.isBlank() } ?: book.publisher,
+                        pageCount = if (book.pageCount == 0) info.pageCount else book.pageCount,
+                        description = info.description.takeIf { book.description.isBlank() } ?: book.description,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                    bookDao.update(book)
+                }
             }
-        }
 
-        if (book.coverSource != CoverMeta.SOURCE_CUSTOM) {
-            fetchCoverFromIsbn(bookId, isbn)
+            book = bookDao.getById(bookId) ?: return
+            if (book.coverSource != CoverMeta.SOURCE_CUSTOM) {
+                fetchCoverFromIsbn(bookId, isbn)
+            }
+        } catch (t: Throwable) {
+            val book = bookDao.getById(bookId) ?: return
+            if (book.coverStatus == CoverMeta.STATUS_LOADING &&
+                book.coverSource != CoverMeta.SOURCE_CUSTOM
+            ) {
+                markCoverFailed(bookId, book.coverSource)
+            }
         }
     }
 
@@ -317,7 +340,7 @@ class BookRepository(
 
     suspend fun saveCustomCoverFromUri(bookId: Long, uri: Uri): CoverActionResult {
         val book = bookDao.getById(bookId) ?: return CoverActionResult.NotFound
-        markCoverLoading(book)
+        markCoverLoading(book.copy(coverSource = CoverMeta.SOURCE_CUSTOM))
         return when (val result = coverService.saveCustomFromUri(bookId, uri)) {
             is CoverService.FetchResult.Success -> {
                 applyCoverSuccess(bookId, result.relativePath, CoverMeta.SOURCE_CUSTOM)
@@ -328,7 +351,7 @@ class BookRepository(
                 CoverActionResult.Failed("图片无效")
             }
             is CoverService.FetchResult.Error -> {
-                markCoverFailed(bookId, book.coverSource)
+                markCoverFailed(bookId, CoverMeta.SOURCE_CUSTOM)
                 CoverActionResult.Failed(result.message)
             }
         }
@@ -336,7 +359,7 @@ class BookRepository(
 
     suspend fun saveCustomCoverFromFile(bookId: Long, file: File): CoverActionResult {
         val book = bookDao.getById(bookId) ?: return CoverActionResult.NotFound
-        markCoverLoading(book)
+        markCoverLoading(book.copy(coverSource = CoverMeta.SOURCE_CUSTOM))
         return when (val result = coverService.saveCustomFromFile(bookId, file)) {
             is CoverService.FetchResult.Success -> {
                 applyCoverSuccess(bookId, result.relativePath, CoverMeta.SOURCE_CUSTOM)
@@ -345,7 +368,7 @@ class BookRepository(
             }
             is CoverService.FetchResult.NotFound,
             is CoverService.FetchResult.Error -> {
-                markCoverFailed(bookId, book.coverSource)
+                markCoverFailed(bookId, CoverMeta.SOURCE_CUSTOM)
                 val msg = if (result is CoverService.FetchResult.Error) result.message else "保存失败"
                 CoverActionResult.Failed(msg)
             }
