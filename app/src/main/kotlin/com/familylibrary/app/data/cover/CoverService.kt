@@ -110,6 +110,12 @@ class CoverService(private val context: Context) {
         fun normalizeIsbn(isbn: String): String =
             isbn.filter { it.isDigit() || it == 'X' || it == 'x' }.uppercase()
 
+        /** 10/13 位格式，扫码录入用（不校验 checksum，避免误扫无反馈） */
+        fun isPlausibleIsbn(isbn: String): Boolean {
+            val n = normalizeIsbn(isbn)
+            return n.length == 10 || n.length == 13
+        }
+
         fun isValidIsbn(isbn: String): Boolean {
             val n = normalizeIsbn(isbn)
             return when (n.length) {
