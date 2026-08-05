@@ -81,7 +81,10 @@ class WishlistScanViewModel(
 
     fun onIsbnScanned(rawIsbn: String) {
         val isbn = CoverService.normalizeIsbn(rawIsbn)
-        if (!CoverService.isValidIsbn(isbn)) return
+        if (!CoverService.isPlausibleIsbn(isbn)) {
+            _state.update { it.copy(lastMessage = "条码无法识别为 ISBN：$rawIsbn") }
+            return
+        }
         val now = System.currentTimeMillis()
         if (isbn == lastScanKey && now - lastScanAt < 2500) return
         lastScanKey = isbn
@@ -114,37 +117,49 @@ class WishlistScanViewModel(
                 )
             }
 
-            val info = lookup.lookup(isbn)
-            if (info != null && hasValidTitle(info.title, isbn)) {
-                wishlistRepo.add(
-                    WishlistItem(
-                        title = info.title,
-                        author = info.author,
-                        isbn = isbn,
-                    ),
-                )
-                _state.update { s ->
-                    s.copy(
-                        sessionItems = s.sessionItems.map { item ->
-                            if (item.isbn != isbn) item
-                            else WishlistScanItem(
-                                isbn = isbn,
-                                title = info.title,
-                                author = info.author,
-                                saved = true,
-                            )
-                        },
-                        lastMessage = "已加入待购：${info.title}",
+            try {
+                val info = lookup.lookup(isbn)
+                if (info != null && hasValidTitle(info.title, isbn)) {
+                    wishlistRepo.add(
+                        WishlistItem(
+                            title = info.title,
+                            author = info.author,
+                            isbn = isbn,
+                        ),
                     )
+                    _state.update { s ->
+                        s.copy(
+                            sessionItems = s.sessionItems.map { item ->
+                                if (item.isbn != isbn) item
+                                else WishlistScanItem(
+                                    isbn = isbn,
+                                    title = info.title,
+                                    author = info.author,
+                                    saved = true,
+                                )
+                            },
+                            lastMessage = "已加入待购：${info.title}",
+                        )
+                    }
+                } else {
+                    _state.update { s ->
+                        s.copy(
+                            sessionItems = s.sessionItems.map { item ->
+                                if (item.isbn != isbn) item
+                                else item.copy(isLookingUpTitle = false, needsManualTitle = true)
+                            },
+                            lastMessage = "未找到书名（请检查网络或手动输入）：$isbn",
+                        )
+                    }
                 }
-            } else {
+            } catch (_: Exception) {
                 _state.update { s ->
                     s.copy(
                         sessionItems = s.sessionItems.map { item ->
                             if (item.isbn != isbn) item
                             else item.copy(isLookingUpTitle = false, needsManualTitle = true)
                         },
-                        lastMessage = "未找到书名：$isbn，请手动输入",
+                        lastMessage = "书名查询失败，请手动输入：$isbn",
                     )
                 }
             }
