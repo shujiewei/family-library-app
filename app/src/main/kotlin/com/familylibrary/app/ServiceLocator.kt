@@ -9,6 +9,7 @@ import com.familylibrary.app.data.db.MIGRATION_1_2
 import com.familylibrary.app.data.db.MIGRATION_2_3
 import com.familylibrary.app.data.db.MIGRATION_3_4
 import com.familylibrary.app.data.db.MIGRATION_4_5
+import com.familylibrary.app.data.db.MIGRATION_5_6
 import com.familylibrary.app.data.entity.AppSettings
 import com.familylibrary.app.data.repository.BookRepository
 import com.familylibrary.app.data.repository.MemberRepository
@@ -33,7 +34,7 @@ class ServiceLocator(context: Context) {
 
     val database: AppDatabase by lazy {
         Room.databaseBuilder(appContext, AppDatabase::class.java, AppDatabase.DB_NAME)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
     }
