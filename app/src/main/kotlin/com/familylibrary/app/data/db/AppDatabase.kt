@@ -17,7 +17,7 @@ import com.familylibrary.app.data.entity.ReadingRecord
 import com.familylibrary.app.data.entity.ShelfRow
 import com.familylibrary.app.data.entity.WishlistItem
 
-const val DB_SCHEMA_VERSION = 5
+const val DB_SCHEMA_VERSION = 6
 
 @Database(
     entities = [
