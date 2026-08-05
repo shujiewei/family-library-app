@@ -7,8 +7,8 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** 通过 ISBN 从 Google Books 查询书目信息 */
-class IsbnLookupService {
+/** 通过 ISBN 查询书目信息（Open Library 优先，Google Books 备用） */
+class IsbnLookupService : IsbnTitleLookup {
 
     data class BookInfo(
         val isbn: String,
@@ -27,33 +27,24 @@ class IsbnLookupService {
     )
 
     /** 同步拉取书名；添加图书前必须成功 */
-    suspend fun lookupTitle(isbn: String): String? = withContext(Dispatchers.IO) {
-        fetchVolumeJson(isbn)?.let { extractField(it, "title") }
+    override suspend fun lookupTitle(isbn: String): String? = withContext(Dispatchers.IO) {
+        lookupParsed(isbn)?.title
     }
 
     suspend fun lookup(isbn: String): BookInfo? = withContext(Dispatchers.IO) {
         val normalized = CoverService.normalizeIsbn(isbn)
-        if (!CoverService.isValidIsbn(normalized)) return@withContext null
-        val json = fetchVolumeJson(normalized) ?: return@withContext null
-        val title = extractField(json, "title") ?: return@withContext null
-        BookInfo(
-            isbn = normalized,
-            title = title,
-            author = extractAuthors(json),
-            publisher = extractField(json, "publisher") ?: "",
-            pageCount = extractField(json, "pageCount")?.toIntOrNull() ?: 0,
-            description = extractField(json, "description") ?: "",
-        )
+        if (!CoverService.isPlausibleIsbn(normalized)) return@withContext null
+        lookupParsed(normalized)?.toBookInfo(normalized)
     }
 
     /** 后台补全：仅作者、出版社等，不含书名 */
     suspend fun lookupSupplemental(isbn: String): SupplementalInfo? = withContext(Dispatchers.IO) {
-        val json = fetchVolumeJson(isbn) ?: return@withContext null
+        val parsed = lookupParsed(isbn) ?: return@withContext null
         SupplementalInfo(
-            author = extractAuthors(json),
-            publisher = extractField(json, "publisher") ?: "",
-            pageCount = extractField(json, "pageCount")?.toIntOrNull() ?: 0,
-            description = extractField(json, "description") ?: "",
+            author = parsed.author,
+            publisher = parsed.publisher,
+            pageCount = parsed.pageCount,
+            description = parsed.description,
         )
     }
 
@@ -66,37 +57,58 @@ class IsbnLookupService {
         description = info.description,
     )
 
-    private fun fetchVolumeJson(isbn: String): String? {
+    private fun lookupParsed(isbn: String): BookMetadataParser.ParsedBook? {
         val normalized = CoverService.normalizeIsbn(isbn)
-        if (!CoverService.isValidIsbn(normalized)) return null
+        if (!CoverService.isPlausibleIsbn(normalized)) return null
+        fetchOpenLibraryJson(normalized)?.let { json ->
+            BookMetadataParser.parseOpenLibrary(json, normalized)?.let { return it }
+        }
+        fetchGoogleBooksJson(normalized)?.let { json ->
+            BookMetadataParser.parseGoogleBooks(json)?.let { return it }
+        }
+        return null
+    }
+
+    private fun BookMetadataParser.ParsedBook.toBookInfo(isbn: String) = BookInfo(
+        isbn = isbn,
+        title = title,
+        author = author,
+        publisher = publisher,
+        pageCount = pageCount,
+        description = description,
+    )
+
+    private fun fetchOpenLibraryJson(isbn: String): String? {
+        val normalized = CoverService.normalizeIsbn(isbn)
+        val url =
+            "https://openlibrary.org/api/books?bibkeys=ISBN:$normalized&jscmd=data&format=json"
         return try {
-            val url = "https://www.googleapis.com/books/v1/volumes?q=isbn:$normalized&maxResults=1"
-            val json = httpGet(url) ?: return null
-            if (!json.contains("\"totalItems\"") || json.contains("\"totalItems\": 0")) return null
-            json
+            httpGet(url)?.takeIf { it.contains("ISBN:$normalized") }
         } catch (t: Throwable) {
-            Log.w(TAG, "fetchVolumeJson failed isbn=$isbn", t)
+            Log.w(TAG, "openlibrary lookup failed isbn=$isbn", t)
             null
         }
     }
 
-    private fun extractAuthors(json: String): String {
-        val regex = """"authors"\s*:\s*\[(.*?)]""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val block = regex.find(json)?.groupValues?.get(1) ?: return ""
-        return """"([^"]+)"""".toRegex().findAll(block).map { it.groupValues[1] }.joinToString("、")
-    }
-
-    private fun extractField(json: String, field: String): String? {
-        val regex = """"$field"\s*:\s*"((?:\\.|[^"\\])*)"""".toRegex()
-        return regex.find(json)?.groupValues?.get(1)
-            ?.replace("\\n", "\n")
-            ?.replace("\\u0026", "&")
+    private fun fetchGoogleBooksJson(isbn: String): String? {
+        val normalized = CoverService.normalizeIsbn(isbn)
+        return try {
+            val url = "https://www.googleapis.com/books/v1/volumes?q=isbn:$normalized&maxResults=1"
+            httpGet(url)?.takeIf { json ->
+                json.contains("\"totalItems\"") && !json.contains("\"totalItems\": 0") &&
+                    !json.contains("\"totalItems\":0")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "google books lookup failed isbn=$isbn", t)
+            null
+        }
     }
 
     private fun httpGet(url: String): String? {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8_000
-            readTimeout = 12_000
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            instanceFollowRedirects = true
             setRequestProperty("User-Agent", "FamilyLibrary/1.0")
         }
         return try {
@@ -109,5 +121,7 @@ class IsbnLookupService {
 
     companion object {
         private const val TAG = "IsbnLookup"
+        private const val CONNECT_TIMEOUT_MS = 6_000
+        private const val READ_TIMEOUT_MS = 8_000
     }
 }
