@@ -9,8 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.math.max
 
 /**
@@ -169,7 +167,25 @@ class CoverService(private val context: Context) {
     private fun downloadCoverBytes(isbn: String): ByteArray? {
         val normalized = normalizeIsbn(isbn)
 
-        // 1. Open Library API（按 cover id，比 /b/isbn/ 直连可靠，尤其中文 ISBN）
+        // 1. book345 国内封面 CDN（中文 ISBN 命中率高）
+        for (size in listOf("l", "m", "s")) {
+            val url = "https://static.book345.com/covers/$size/$normalized.jpg"
+            downloadIfValid(url)?.let { return it }
+        }
+
+        // 2. 豆瓣 og:image
+        fetchDoubanHtml(normalized)?.let { html ->
+            BookMetadataParser.doubanCoverUrl(html)?.let { url ->
+                downloadIfValid(url)?.let { return it }
+            }
+        }
+
+        // 3. longitood（Goodreads 封面代理）
+        fetchLongitoodCoverUrl(normalized)?.let { url ->
+            downloadIfValid(url)?.let { return it }
+        }
+
+        // 4. Open Library API（按 cover id，比 /b/isbn/ 直连可靠，尤其中文 ISBN）
         fetchOpenLibraryBooksJson(normalized)?.let { json ->
             downloadFirstValid(CoverUrlResolver.openLibraryCoverUrls(json, normalized))?.let { return it }
             CoverUrlResolver.openLibraryIsbn10(json)?.let { isbn10 ->
@@ -179,13 +195,13 @@ class CoverService(private val context: Context) {
             }
         }
 
-        // 2. Open Library 直连 ISBN（部分旧书仍可用）
+        // 5. Open Library 直连 ISBN（部分旧书仍可用）
         for (size in listOf("L", "M", "S")) {
             val url = "https://covers.openlibrary.org/b/isbn/$normalized-$size.jpg?default=false"
             downloadIfValid(url)?.let { return it }
         }
 
-        // 3. Google Books（国内可能不可用，作备用）
+        // 6. Google Books（国内可能不可用，作备用）
         fetchGoogleBooksJson(normalized)?.let { json ->
             val urls = CoverUrlResolver.googleBooksCoverUrls(json).map { upgradeGoogleImageUrl(it) }
             downloadFirstValid(urls)?.let { return it }
@@ -206,9 +222,41 @@ class CoverService(private val context: Context) {
         if (normalized.isBlank()) return null
         val url = "https://openlibrary.org/api/books?bibkeys=ISBN:$normalized&jscmd=data&format=json"
         return try {
-            httpGetString(url)?.takeIf { it.contains("ISBN:$normalized") }
+            IsbnHttp.getString(url)?.takeIf { it.contains("ISBN:$normalized") }
         } catch (t: Throwable) {
             Log.w(TAG, "openlibrary books api failed isbn=$isbn", t)
+            null
+        }
+    }
+
+    private fun fetchDoubanHtml(isbn: String): String? {
+        val normalized = normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
+        return try {
+            IsbnHttp.getString(
+                url = "https://book.douban.com/isbn/$normalized/",
+                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
+                accept = "text/html,application/xhtml+xml,*/*",
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "douban cover page failed isbn=$isbn", t)
+            null
+        }
+    }
+
+    private fun fetchLongitoodCoverUrl(isbn: String): String? {
+        val normalized = normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
+        val url = "https://bookcover.longitood.com/bookcover?isbn=$normalized"
+        return try {
+            IsbnHttp.getString(
+                url = url,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
+            )?.let { CoverUrlResolver.longitoodCoverUrl(it) }
+        } catch (t: Throwable) {
+            Log.w(TAG, "longitood cover failed isbn=$isbn", t)
             null
         }
     }
@@ -216,7 +264,7 @@ class CoverService(private val context: Context) {
     private fun fetchGoogleBooksJson(isbn: String): String? {
         val apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:$isbn&maxResults=1"
         return try {
-            httpGetString(apiUrl)?.takeIf { json ->
+            IsbnHttp.getString(apiUrl)?.takeIf { json ->
                 json.contains("\"totalItems\"") && !json.contains("\"totalItems\": 0") &&
                     !json.contains("\"totalItems\":0")
             }
@@ -232,32 +280,17 @@ class CoverService(private val context: Context) {
 
     private fun downloadIfValid(url: String): ByteArray? {
         return try {
-            val bytes = httpGetBytes(url) ?: return null
+            val bytes = IsbnHttp.getBytes(
+                url = url,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
+            ) ?: return null
             if (!isValidImageBytes(bytes)) null else bytes
         } catch (t: Throwable) {
             Log.w(TAG, "download failed: $url", t)
             null
         }
     }
-
-    private fun httpGetBytes(url: String): ByteArray? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "FamilyLibrary/1.0")
-            setRequestProperty("Accept", "image/*,application/json,*/*")
-        }
-        return try {
-            if (conn.responseCode !in 200..299) return null
-            conn.inputStream.use { it.readBytes() }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun httpGetString(url: String): String? =
-        httpGetBytes(url)?.toString(Charsets.UTF_8)
 
     private fun createThumbnail(sourceBytes: ByteArray, maxWidth: Int): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
