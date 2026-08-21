@@ -3,7 +3,10 @@ package com.familylibrary.app.data.cover
 import android.util.Log
 import com.familylibrary.app.data.entity.Book
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -28,24 +31,29 @@ class IsbnLookupService : IsbnTitleLookup {
 
     /** 同步拉取书名；添加图书前必须成功 */
     override suspend fun lookupTitle(isbn: String): String? = withContext(Dispatchers.IO) {
-        lookupParsed(isbn)?.title
+        lookup(isbn)?.title
     }
 
     suspend fun lookup(isbn: String): BookInfo? = withContext(Dispatchers.IO) {
         val normalized = CoverService.normalizeIsbn(isbn)
         if (!CoverService.isPlausibleIsbn(normalized)) return@withContext null
-        lookupParsed(normalized)?.toBookInfo(normalized)
+        withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
+            lookupParsed(normalized)?.toBookInfo(normalized)
+        }
     }
 
     /** 后台补全：仅作者、出版社等，不含书名 */
     suspend fun lookupSupplemental(isbn: String): SupplementalInfo? = withContext(Dispatchers.IO) {
-        val parsed = lookupParsed(isbn) ?: return@withContext null
-        SupplementalInfo(
-            author = parsed.author,
-            publisher = parsed.publisher,
-            pageCount = parsed.pageCount,
-            description = parsed.description,
-        )
+        withTimeoutOrNull(LOOKUP_TIMEOUT_MS) {
+            lookupParsed(CoverService.normalizeIsbn(isbn))?.let {
+                SupplementalInfo(
+                    author = it.author,
+                    publisher = it.publisher,
+                    pageCount = it.pageCount,
+                    description = it.description,
+                )
+            }
+        }
     }
 
     fun toBook(info: BookInfo): Book = Book(
@@ -57,16 +65,18 @@ class IsbnLookupService : IsbnTitleLookup {
         description = info.description,
     )
 
-    private fun lookupParsed(isbn: String): BookMetadataParser.ParsedBook? {
-        val normalized = CoverService.normalizeIsbn(isbn)
-        if (!CoverService.isPlausibleIsbn(normalized)) return null
-        fetchOpenLibraryJson(normalized)?.let { json ->
-            BookMetadataParser.parseOpenLibrary(json, normalized)?.let { return it }
+    private suspend fun lookupParsed(normalized: String): BookMetadataParser.ParsedBook? = coroutineScope {
+        val googleDeferred = async { fetchGoogleBooksJson(normalized) }
+        val olJson = fetchOpenLibraryJson(normalized)
+        olJson?.let { json ->
+            BookMetadataParser.parseOpenLibrary(json, normalized)?.let { return@coroutineScope it }
+            CoverUrlResolver.openLibraryIsbn10(json)?.let { isbn10 ->
+                fetchOpenLibraryJson(isbn10)?.let { json10 ->
+                    BookMetadataParser.parseOpenLibrary(json10, isbn10)?.let { return@coroutineScope it }
+                }
+            }
         }
-        fetchGoogleBooksJson(normalized)?.let { json ->
-            BookMetadataParser.parseGoogleBooks(json)?.let { return it }
-        }
-        return null
+        googleDeferred.await()?.let { BookMetadataParser.parseGoogleBooks(it) }
     }
 
     private fun BookMetadataParser.ParsedBook.toBookInfo(isbn: String) = BookInfo(
@@ -80,6 +90,7 @@ class IsbnLookupService : IsbnTitleLookup {
 
     private fun fetchOpenLibraryJson(isbn: String): String? {
         val normalized = CoverService.normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
         val url =
             "https://openlibrary.org/api/books?bibkeys=ISBN:$normalized&jscmd=data&format=json"
         return try {
@@ -110,6 +121,7 @@ class IsbnLookupService : IsbnTitleLookup {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "FamilyLibrary/1.0")
+            setRequestProperty("Accept", "application/json,*/*")
         }
         return try {
             if (conn.responseCode !in 200..299) null
@@ -121,7 +133,8 @@ class IsbnLookupService : IsbnTitleLookup {
 
     companion object {
         private const val TAG = "IsbnLookup"
-        private const val CONNECT_TIMEOUT_MS = 6_000
-        private const val READ_TIMEOUT_MS = 8_000
+        private const val LOOKUP_TIMEOUT_MS = 10_000L
+        private const val CONNECT_TIMEOUT_MS = 4_000
+        private const val READ_TIMEOUT_MS = 5_000
     }
 }
