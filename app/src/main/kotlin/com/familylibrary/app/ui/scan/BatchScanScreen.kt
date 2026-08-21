@@ -55,7 +55,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ScannedItem(
     val isbn: String,
@@ -146,7 +146,7 @@ class BatchScanViewModel(
                     return@launch
                 }
 
-                val title = lookup.lookupTitle(isbn)
+                val title = withTimeoutOrNull(12_000) { lookup.lookupTitle(isbn) }
                 _state.update { s ->
                     s.copy(
                         items = s.items.map { item ->
@@ -164,10 +164,9 @@ class BatchScanViewModel(
                                 )
                             }
                         },
-                        lastMessage = if (title != null) {
-                            "已获取书名：$title"
-                        } else {
-                            "未找到书名（请检查网络或手动输入）：$isbn"
+                        lastMessage = when {
+                            title != null -> "已获取书名：$title"
+                            else -> "未找到书名或查询超时，请手动输入：$isbn"
                         },
                     )
                 }
