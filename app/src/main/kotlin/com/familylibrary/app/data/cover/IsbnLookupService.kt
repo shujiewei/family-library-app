@@ -7,10 +7,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.net.HttpURLConnection
-import java.net.URL
 
-/** 通过 ISBN 查询书目信息（Open Library 优先，Google Books 备用） */
+/** 通过 ISBN 查询书目信息（豆瓣 / Open Library 优先，Google Books 备用） */
 class IsbnLookupService : IsbnTitleLookup {
 
     data class BookInfo(
@@ -66,7 +64,19 @@ class IsbnLookupService : IsbnTitleLookup {
     )
 
     private suspend fun lookupParsed(normalized: String): BookMetadataParser.ParsedBook? = coroutineScope {
+        // 国内中文书：豆瓣最可靠
+        val doubanDeferred = async { fetchDoubanHtml(normalized) }
+        val olSearchDeferred = async { fetchOpenLibrarySearchJson(normalized) }
         val googleDeferred = async { fetchGoogleBooksJson(normalized) }
+
+        doubanDeferred.await()?.let { html ->
+            BookMetadataParser.parseDouban(html, normalized)?.let { return@coroutineScope it }
+        }
+
+        olSearchDeferred.await()?.let { json ->
+            BookMetadataParser.parseOpenLibrarySearch(json)?.let { return@coroutineScope it }
+        }
+
         val olJson = fetchOpenLibraryJson(normalized)
         olJson?.let { json ->
             BookMetadataParser.parseOpenLibrary(json, normalized)?.let { return@coroutineScope it }
@@ -76,6 +86,7 @@ class IsbnLookupService : IsbnTitleLookup {
                 }
             }
         }
+
         googleDeferred.await()?.let { BookMetadataParser.parseGoogleBooks(it) }
     }
 
@@ -88,13 +99,40 @@ class IsbnLookupService : IsbnTitleLookup {
         description = description,
     )
 
+    private fun fetchDoubanHtml(isbn: String): String? {
+        val normalized = CoverService.normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
+        val url = "https://book.douban.com/isbn/$normalized/"
+        return try {
+            IsbnHttp.getString(
+                url = url,
+                accept = "text/html,application/xhtml+xml,*/*",
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "douban lookup failed isbn=$isbn", t)
+            null
+        }
+    }
+
+    private fun fetchOpenLibrarySearchJson(isbn: String): String? {
+        val normalized = CoverService.normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
+        val url = "https://openlibrary.org/search.json?isbn=$normalized&limit=1"
+        return try {
+            IsbnHttp.getString(url)?.takeIf { it.contains("\"docs\"") && !it.contains("\"numFound\":0") }
+        } catch (t: Throwable) {
+            Log.w(TAG, "openlibrary search failed isbn=$isbn", t)
+            null
+        }
+    }
+
     private fun fetchOpenLibraryJson(isbn: String): String? {
         val normalized = CoverService.normalizeIsbn(isbn)
         if (normalized.isBlank()) return null
         val url =
             "https://openlibrary.org/api/books?bibkeys=ISBN:$normalized&jscmd=data&format=json"
         return try {
-            httpGet(url)?.takeIf { it.contains("ISBN:$normalized") }
+            IsbnHttp.getString(url)?.takeIf { it.contains("ISBN:$normalized") }
         } catch (t: Throwable) {
             Log.w(TAG, "openlibrary lookup failed isbn=$isbn", t)
             null
@@ -105,7 +143,7 @@ class IsbnLookupService : IsbnTitleLookup {
         val normalized = CoverService.normalizeIsbn(isbn)
         return try {
             val url = "https://www.googleapis.com/books/v1/volumes?q=isbn:$normalized&maxResults=1"
-            httpGet(url)?.takeIf { json ->
+            IsbnHttp.getString(url)?.takeIf { json ->
                 json.contains("\"totalItems\"") && !json.contains("\"totalItems\": 0") &&
                     !json.contains("\"totalItems\":0")
             }
@@ -115,26 +153,8 @@ class IsbnLookupService : IsbnTitleLookup {
         }
     }
 
-    private fun httpGet(url: String): String? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "FamilyLibrary/1.0")
-            setRequestProperty("Accept", "application/json,*/*")
-        }
-        return try {
-            if (conn.responseCode !in 200..299) null
-            else conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
     companion object {
         private const val TAG = "IsbnLookup"
-        private const val LOOKUP_TIMEOUT_MS = 10_000L
-        private const val CONNECT_TIMEOUT_MS = 4_000
-        private const val READ_TIMEOUT_MS = 5_000
+        private const val LOOKUP_TIMEOUT_MS = 12_000L
     }
 }
