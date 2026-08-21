@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.max
@@ -51,7 +50,7 @@ class CoverService(private val context: Context) {
         try {
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return@withContext FetchResult.Error("无法读取图片")
-            if (bytes.size < MIN_IMAGE_BYTES) return@withContext FetchResult.Error("图片过小或无效")
+            if (!isValidImageBytes(bytes)) return@withContext FetchResult.Error("图片过小或无效")
             saveThumbnailBytes(bookId, bytes)?.let { FetchResult.Success(it) }
                 ?: FetchResult.Error("缩略图生成失败")
         } catch (t: Throwable) {
@@ -64,6 +63,7 @@ class CoverService(private val context: Context) {
         try {
             if (!file.exists()) return@withContext FetchResult.Error("照片文件不存在")
             val bytes = file.readBytes()
+            if (!isValidImageBytes(bytes)) return@withContext FetchResult.Error("图片无效")
             saveThumbnailBytes(bookId, bytes)?.let { FetchResult.Success(it) }
                 ?: FetchResult.Error("缩略图生成失败")
         } catch (t: Throwable) {
@@ -103,7 +103,7 @@ class CoverService(private val context: Context) {
         const val COVERS_DIR = "covers"
         private const val THUMB_MAX_WIDTH = 200
         private const val JPEG_QUALITY = 85
-        private const val MIN_IMAGE_BYTES = 800
+        private const val MIN_IMAGE_BYTES = 400
         private const val CONNECT_TIMEOUT_MS = 8_000
         private const val READ_TIMEOUT_MS = 12_000
 
@@ -148,33 +148,82 @@ class CoverService(private val context: Context) {
             val check = (10 - (sum % 10)) % 10
             return check == (isbn[12] - '0')
         }
+
+        internal fun isValidImageBytes(bytes: ByteArray): Boolean =
+            bytes.size >= MIN_IMAGE_BYTES && (isJpeg(bytes) || isPng(bytes))
+
+        private fun isJpeg(bytes: ByteArray): Boolean =
+            bytes.size >= 3 &&
+                bytes[0] == 0xFF.toByte() &&
+                bytes[1] == 0xD8.toByte() &&
+                bytes[2] == 0xFF.toByte()
+
+        private fun isPng(bytes: ByteArray): Boolean =
+            bytes.size >= 8 &&
+                bytes[0] == 0x89.toByte() &&
+                bytes[1] == 0x50.toByte() &&
+                bytes[2] == 0x4E.toByte() &&
+                bytes[3] == 0x47.toByte()
     }
 
-    private suspend fun downloadCoverBytes(isbn: String): ByteArray? {
-        val openLibraryUrl = "https://covers.openlibrary.org/b/isbn/$isbn-M.jpg?default=false"
-        downloadIfValid(openLibraryUrl)?.let { return it }
+    private fun downloadCoverBytes(isbn: String): ByteArray? {
+        val normalized = normalizeIsbn(isbn)
 
-        val googleUrl = fetchGoogleBooksCoverUrl(isbn) ?: return null
-        return downloadIfValid(upgradeGoogleImageUrl(googleUrl))
+        // 1. Open Library API（按 cover id，比 /b/isbn/ 直连可靠，尤其中文 ISBN）
+        fetchOpenLibraryBooksJson(normalized)?.let { json ->
+            downloadFirstValid(CoverUrlResolver.openLibraryCoverUrls(json, normalized))?.let { return it }
+            CoverUrlResolver.openLibraryIsbn10(json)?.let { isbn10 ->
+                fetchOpenLibraryBooksJson(isbn10)?.let { json10 ->
+                    downloadFirstValid(CoverUrlResolver.openLibraryCoverUrls(json10, isbn10))?.let { return it }
+                }
+            }
+        }
+
+        // 2. Open Library 直连 ISBN（部分旧书仍可用）
+        for (size in listOf("L", "M", "S")) {
+            val url = "https://covers.openlibrary.org/b/isbn/$normalized-$size.jpg?default=false"
+            downloadIfValid(url)?.let { return it }
+        }
+
+        // 3. Google Books（国内可能不可用，作备用）
+        fetchGoogleBooksJson(normalized)?.let { json ->
+            val urls = CoverUrlResolver.googleBooksCoverUrls(json).map { upgradeGoogleImageUrl(it) }
+            downloadFirstValid(urls)?.let { return it }
+        }
+
+        return null
     }
 
-    private fun fetchGoogleBooksCoverUrl(isbn: String): String? {
-        val apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:$isbn&maxResults=1"
+    private fun downloadFirstValid(urls: List<String>): ByteArray? {
+        for (url in urls) {
+            downloadIfValid(url)?.let { return it }
+        }
+        return null
+    }
+
+    private fun fetchOpenLibraryBooksJson(isbn: String): String? {
+        val normalized = normalizeIsbn(isbn)
+        if (normalized.isBlank()) return null
+        val url = "https://openlibrary.org/api/books?bibkeys=ISBN:$normalized&jscmd=data&format=json"
         return try {
-            val json = httpGetString(apiUrl) ?: return null
-            extractJsonField(json, "thumbnail")
-                ?: extractJsonField(json, "smallThumbnail")
+            httpGetString(url)?.takeIf { it.contains("ISBN:$normalized") }
         } catch (t: Throwable) {
-            Log.w(TAG, "google books lookup failed", t)
+            Log.w(TAG, "openlibrary books api failed isbn=$isbn", t)
             null
         }
     }
 
-    private fun extractJsonField(json: String, field: String): String? {
-        val regex = """"$field"\s*:\s*"((?:\\.|[^"\\])*)"""".toRegex()
-        return regex.find(json)?.groupValues?.get(1)
-            ?.replace("\\u0026", "&")
-            ?.replace("\\/", "/")
+    private fun fetchGoogleBooksJson(isbn: String): String? {
+        val apiUrl = "https://www.googleapis.com/books/v1/volumes?q=isbn:$isbn&maxResults=1"
+        return try {
+            httpGetString(apiUrl)?.takeIf { json ->
+                json.contains("\"totalItems\"") && !json.contains("\"totalItems\": 0") &&
+                    !json.contains("\"totalItems\":0")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "google books lookup failed", t)
+            null
+        }
     }
 
     private fun upgradeGoogleImageUrl(url: String): String =
@@ -184,7 +233,7 @@ class CoverService(private val context: Context) {
     private fun downloadIfValid(url: String): ByteArray? {
         return try {
             val bytes = httpGetBytes(url) ?: return null
-            if (bytes.size < MIN_IMAGE_BYTES) null else bytes
+            if (!isValidImageBytes(bytes)) null else bytes
         } catch (t: Throwable) {
             Log.w(TAG, "download failed: $url", t)
             null
@@ -197,6 +246,7 @@ class CoverService(private val context: Context) {
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "FamilyLibrary/1.0")
+            setRequestProperty("Accept", "image/*,application/json,*/*")
         }
         return try {
             if (conn.responseCode !in 200..299) return null
