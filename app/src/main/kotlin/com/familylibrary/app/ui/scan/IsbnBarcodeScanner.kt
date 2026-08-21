@@ -11,6 +11,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -25,17 +26,23 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 
+/** 同一 ISBN 在此时间内只回调一次（避免条码一直在画面里时反复震动） */
+private const val DEFAULT_SCAN_COOLDOWN_MS = 3_000L
+
 @androidx.camera.core.ExperimentalGetImage
 @Composable
 fun IsbnBarcodeScanner(
     enabled: Boolean,
     onIsbnDetected: (String) -> Unit,
     modifier: Modifier = Modifier,
+    scanCooldownMs: Long = DEFAULT_SCAN_COOLDOWN_MS,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    val onDetectedState = rememberUpdatedState(onIsbnDetected)
+    val debounce = remember { ScanDebounce() }
 
     AndroidView(
         factory = { ctx ->
@@ -47,7 +54,7 @@ fun IsbnBarcodeScanner(
         modifier = modifier,
     )
 
-    DisposableEffect(enabled, previewView) {
+    DisposableEffect(enabled, previewView, scanCooldownMs) {
         val pv = previewView
         if (!enabled || pv == null) return@DisposableEffect onDispose {}
 
@@ -86,13 +93,14 @@ fun IsbnBarcodeScanner(
                     )
                     scanner.process(input)
                         .addOnSuccessListener { barcodes ->
-                            barcodes.forEach { code ->
-                                normalizeBarcodeToIsbn(code.rawValue)?.let { isbn ->
-                                    mainExecutor.execute {
-                                        ScanFeedback.onIsbnScanned(view)
-                                        onIsbnDetected(isbn)
-                                    }
+                            for (code in barcodes) {
+                                val isbn = normalizeBarcodeToIsbn(code.rawValue) ?: continue
+                                if (!debounce.shouldAccept(isbn, scanCooldownMs)) continue
+                                mainExecutor.execute {
+                                    ScanFeedback.onIsbnScanned(view)
+                                    onDetectedState.value(isbn)
                                 }
+                                break
                             }
                         }
                         .addOnCompleteListener { imageProxy.close() }
@@ -113,7 +121,28 @@ fun IsbnBarcodeScanner(
             cameraProvider?.unbindAll()
             scanner.close()
             analyzerExecutor.shutdown()
+            debounce.reset()
         }
+    }
+}
+
+/** 线程安全的扫码去重（分析线程写入，主线程读取时间戳） */
+internal class ScanDebounce {
+    @Volatile private var lastIsbn: String = ""
+    @Volatile private var lastAtMs: Long = 0L
+
+    @Synchronized
+    fun shouldAccept(isbn: String, cooldownMs: Long): Boolean {
+        val now = System.currentTimeMillis()
+        if (isbn == lastIsbn && now - lastAtMs < cooldownMs) return false
+        lastIsbn = isbn
+        lastAtMs = now
+        return true
+    }
+
+    fun reset() {
+        lastIsbn = ""
+        lastAtMs = 0L
     }
 }
 
