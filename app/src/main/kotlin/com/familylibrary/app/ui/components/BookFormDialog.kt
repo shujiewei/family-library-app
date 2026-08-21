@@ -35,6 +35,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class BookFormState(
     val title: String = "",
@@ -115,7 +116,9 @@ fun BookFormDialog(
         isLookingUpTitle = true
         lookupMessage = null
         try {
-            val info = withContext(Dispatchers.IO) { lookup.lookup(normalized) }
+            val info = withTimeoutOrNull(12_000) {
+                withContext(Dispatchers.IO) { lookup.lookup(normalized) }
+            }
             if (info != null) {
                 state = state.copy(
                     title = if (state.title.isBlank()) info.title else state.title,
@@ -129,7 +132,7 @@ fun BookFormDialog(
                     description = if (state.description.isBlank()) info.description else state.description,
                 )
             } else if (state.title.isBlank()) {
-                lookupMessage = "未找到书名（请检查网络或手动填写）"
+                lookupMessage = "未找到书名或查询超时，请检查网络或手动填写"
             }
         } catch (_: Exception) {
             lookupMessage = "书名查询失败，请手动填写"
@@ -277,7 +280,9 @@ fun BookFormDialog(
                     scope.launch {
                         isLookingUpTitle = true
                         try {
-                            val info = withContext(Dispatchers.IO) { isbnLookup.lookup(normalized) }
+                            val info = withTimeoutOrNull(12_000) {
+                                withContext(Dispatchers.IO) { isbnLookup.lookup(normalized) }
+                            }
                             if (info != null) {
                                 state = state.copy(
                                     title = if (state.title.isBlank()) info.title else state.title,
@@ -296,7 +301,7 @@ fun BookFormDialog(
                                 )
                                 lookupMessage = null
                             } else {
-                                lookupMessage = "未找到书名（请检查网络或手动填写）"
+                                lookupMessage = "未找到书名或查询超时，请手动填写"
                             }
                         } catch (_: Exception) {
                             lookupMessage = "书名查询失败，请手动填写"
